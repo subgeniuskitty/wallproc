@@ -17,7 +17,7 @@ options:
 	@echo "CC       = ${CC}"
 
 wallproc:
-	@${CC} -o $@ ${CFLAGS} main_old.c
+	@${CC} -o $@ ${CFLAGS} main.c
 
 clean:
 	@rm wallproc
