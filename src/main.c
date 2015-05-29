@@ -61,12 +61,94 @@ typedef struct SDLPOINTERS {
 int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc );
 void print_usage( char * argv[] );
 char * sanitize_path( char * path );
+FILE_LIST * build_file_list( char * source );
+void clear_filelist_struct( FILE_LIST * ent );
 
 /*
  * =====================================================================================================================
  * function definitions
  * =====================================================================================================================
  */
+
+void clear_filelist_struct( FILE_LIST * ent ) {
+        ent->next = NULL;
+        ent->prev = NULL;
+        ent->path = "";
+        ent->img_h = 0;
+        ent->img_w = 0;
+        ent->sel_h = 0;
+        ent->sel_w = 0;
+        ent->sel_x = 0;
+        ent->sel_y = 0;
+        ent->valid_sdl = 0;
+        ent->valid_imagick = 0;
+}
+
+/* Builds list of files in source. Non-recursive. */
+/* Returns NULL if no items found. Otherwise returns a double-linked list of FILE_LIST structs. */
+FILE_LIST * build_file_list( char * source ) {
+        DIR * dir = NULL;
+        struct dirent * ent = NULL;
+
+        if( SGK_DEBUG ) printf( "DEBUG: Building file list -- Using directory: %s\n", source );
+
+        /* Pointers to the first and last FILE_LIST structs. In order to form a loop, we will need to join them. */
+        FILE_LIST * first = NULL;
+        FILE_LIST * last = NULL;
+
+
+        if(( dir = opendir(source)) != NULL ) {
+                while(( ent = readdir(dir)) != NULL ) {
+                        if( ent->d_type == DT_REG ) { /* tests if ent is a regular file, not symlink/etc */
+                                FILE_LIST * temp = malloc( sizeof( FILE_LIST ) );
+                                if( temp == NULL ) {
+                                        /* 
+                                         * Print the error, but take no other action.
+                                         * Since temp == NULL, this entry is not added to the list. 
+                                         */
+                                        fprintf( stderr, "ERROR: Unable to malloc for FILE_LIST entry.\n" );
+                                } else {
+                                        clear_filelist_struct( temp );
+                                        int len = strlen(ent->d_name)   /* filename */
+                                                + strlen(source)        /* path to file, relative to PWD */
+                                                + 1                     /* +1 for '/' between path and filename */
+                                                + 1;                    /* +1 for terminating null character */
+                                        temp->path = malloc( len );
+                                        if( temp->path == NULL ) {
+                                                /*
+                                                 * Print the error, but also free temp and set temp = NULL.
+                                                 * This ensures we don't add a bogus entry to the list.
+                                                 */
+                                                fprintf( stderr, "ERROR: Unable to malloc for path in FILE_LIST.\n" );
+                                                free(temp);
+                                                temp = NULL;
+                                        } else {
+                                                /* Copy the string, including the relative path from PWD. */
+                                                snprintf( temp->path, len, "%s/%s", source, ent->d_name );
+                                        }
+                                        if( temp != NULL ) { /* We have a valid entry to add. */
+                                                if( first == NULL ) {
+                                                        /* Start the list. */
+                                                        first = temp;
+                                                        last = temp;
+                                                } else {
+                                                        /* Extend the list, continuing from last. */
+                                                        last->next = temp;
+                                                        temp->prev = last;
+                                                        last = temp;
+                                                }
+                                        }
+                                }
+                        }
+                }
+        }
+
+        /* Close the loop */
+        first->prev = last;
+        last->next = first;
+        
+        return first;
+}
 
 void print_usage( char * argv[] ) {
         /* TODO: This version statement is buried in the source code. Make it more visible, perhaps in a #define. */
@@ -160,6 +242,23 @@ int main( int argc, char * argv[] ) {
                 exit(EXIT_FAILURE);
         }
 
+        FILE_LIST * file_list = build_file_list( cmd_line_args.src );
+        if( file_list == NULL ) {
+                fprintf( stderr, "ERROR: Failed to build list of files.\n" );
+                exit(EXIT_FAILURE);
+        }
 
+        /* Check (print) the files in file_list. */
+        if( SGK_DEBUG ) {
+                printf( "DEBUG: Files in file list:\n" );
+                FILE_LIST * start = file_list;
+                FILE_LIST * current = file_list;
+                do {
+                        printf( "DEBUG:  -- %s\n", current->path );
+                        current = current->next;
+                } while ( current != start );
+        }
+
+        // TODO: Free memory from the various structs before exiting.
         exit(EXIT_SUCCESS);
 }
