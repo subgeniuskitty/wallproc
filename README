@@ -5,3 +5,29 @@
 ##### Description
 
 Quickly crop images to a fixed aspect ratio.
+
+##### Requirements
+
+Building wallproc requires SDL2, SDL_image & ImageMagick header files.
+In case the latest versions no longer work, suitable source tarballs
+can be found under the 'inc' folder.
+
+##### Installation
+
+Edit Makefile to match your local setup (wallproc is installed into
+the /usr/local namespace by default).
+
+Afterwards enter the following command to build and install wallproc (if
+necessary as root):
+
+    make clean install
+
+##### Running wallproc
+
+Execute 'wallproc' with no command line arguments for the most current
+usage instructions.
+
+##### Configuration
+
+The configuration of wallproc is done by creating a custom config.h and 
+recompiling the source code.
