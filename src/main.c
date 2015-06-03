@@ -63,6 +63,9 @@ void print_usage( char * argv[] );
 char * sanitize_path( char * path );
 FILE_LIST * build_file_list( char * source );
 void clear_filelist_struct( FILE_LIST * ent );
+int sdl_init( SDL_POINTERS * sdl_pointers );
+int imagick_init( void );
+int sdl_clear( SDL_POINTERS * sdl_pointers );
 
 /*
  * =====================================================================================================================
@@ -218,15 +221,110 @@ int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc ) {
 
         if( SGK_DEBUG ) {
                 printf( "DEBUG: Processing command line arguments.\n" );
-                printf( "DEBUG: Aspect Ratio = %f\n", cmd_line_args->aspect );
-                printf( "DEBUG: Source = %s\n", cmd_line_args->src );
-                printf( "DEBUG: Destination = %s\n", cmd_line_args->dst );
+                printf( "DEBUG:  -- Aspect Ratio = %f\n", cmd_line_args->aspect );
+                printf( "DEBUG:  -- Source = %s\n", cmd_line_args->src );
+                printf( "DEBUG:  -- Destination = %s\n", cmd_line_args->dst );
                 if( argc == 5 ) {
-                        printf( "DEBUG: Archive = %s\n", cmd_line_args->archive );
+                        printf( "DEBUG:  -- Archive = %s\n", cmd_line_args->archive );
                 }
         }
 
         return ret_val;
+}
+
+/* Set SDL window solid gray. */
+int sdl_clear( SDL_POINTERS * sdl_pointers ) {
+        int ret_val = 0;
+
+        /* '128' is for R,G,B, respectively. */
+        int temp = SDL_SetRenderDrawColor( sdl_pointers->renderer, 128, 128, 128, SDL_ALPHA_OPAQUE );
+        if( temp != 0 ) {
+                fprintf( stderr, "ERROR: Unable to set renderer draw color: %s\n", SDL_GetError() );
+                ret_val = 1;
+        }
+        temp = SDL_RenderClear( sdl_pointers->renderer );
+        if( temp != 0 ) {
+                fprintf( stderr, "ERROR: Unable to clear renderer: %s\n", SDL_GetError() );
+                ret_val = 1;
+        }
+        SDL_RenderPresent( sdl_pointers->renderer );
+
+        return ret_val;
+}
+
+/* Initializes SDL subsystem and stores relevant pointers in struct. */
+/* Returns 1 on program-halting error, otherwise 0 */
+int sdl_init( SDL_POINTERS * sdl_pointers ) {
+        int ret_val = 0;
+
+        /* Initialize SDL subsystems. */
+        /* We require the VIDEO subsystem for display. */
+        /* The EVENTS and FILE I/O subsystems are initialized by default. */
+        if( SDL_Init( SDL_INIT_VIDEO ) ) {
+                fprintf( stderr, "ERROR: Unable to initialize SDL: %s\n", SDL_GetError() );
+                ret_val = 1;
+        }
+
+        /* Print list of displays. Example: Display #2 Mode: 1600x2560 px @ 59 hz */
+        if( SGK_DEBUG ) {
+                printf( "DEBUG: Initializing SDL\n" );
+                SDL_DisplayMode current;
+                int num_displays = SDL_GetNumVideoDisplays();
+                if( num_displays <= 0 ) {
+                        fprintf( stderr, "ERROR: Unable to get number of displays: %s\n", SDL_GetError() );
+                } else {
+                        for( int i=0; i < num_displays; i++ ) {
+                                int temp = SDL_GetCurrentDisplayMode( i, &current );
+                                if( temp != 0 ) {
+                                        fprintf( stderr, "ERROR: Unable to get current display mode: %s\n", 
+                                                        SDL_GetError() 
+                                                        );
+                                } else {
+                                        printf( "DEBUG:  -- Display #%d Mode: %dx%d @ %d hz\n", i, current.w,
+                                                        current.h, current.refresh_rate
+                                                        );
+                                }
+                        }
+                }
+        }
+
+        /* Create an SDL window and renderer, and populate the sdl_pointers struct. */
+        /* These two variables will hold the initial values for the window we shall create in a few lines. */
+        int width = 0;
+        int height = 0;
+        SDL_DisplayMode disp_mode;
+        /* TODO: Is there a way to find the 'primary' display like in Windows? For now use display 0. */
+        int temp = SDL_GetCurrentDisplayMode( 0, &disp_mode );
+        if( temp != 0 ) {
+                fprintf( stderr, "ERROR: Unable to get current display mode: %s\n", SDL_GetError() );
+                ret_val = 1;
+        } else {
+                width = disp_mode.w / 2;
+                height = disp_mode.h / 2;
+        }
+        temp = SDL_CreateWindowAndRenderer( width, height, SDL_WINDOW_RESIZABLE, &sdl_pointers->window, 
+                        &sdl_pointers->renderer 
+                        );
+        if( temp != 0 ) {
+                fprintf( stderr, "ERROR: Unable to create SDL window: %s\n", SDL_GetError() );
+                ret_val = 1;
+        }
+        /* Clear window so it appears normal to user. */
+        temp = sdl_clear( sdl_pointers );
+        if( temp != 0 ) {
+                fprintf( stderr, "ERROR: Unable to clear SDL window: %s\n", SDL_GetError() );
+                /* Not a fatal error. Do not flag. */
+        }
+
+        return ret_val;
+}
+
+/* Initialize ImageMagick subsystem */
+int imagick_init( void ) {
+        /* ImageMagick doesn't return much feedback from functions. */
+        /* Return a value anyway, to match behavior of sdl_init(). */
+        MagickWandGenesis();
+        return 0;
 }
 
 int main( int argc, char * argv[] ) {
@@ -236,18 +334,18 @@ int main( int argc, char * argv[] ) {
                 print_usage(argv);
                 exit(EXIT_FAILURE);
         }
+        /* Process the command line arguments. */
         CMD_LINE_ARGS cmd_line_args = {"", "", 0.0, ""};
         if( process_argv( &cmd_line_args, argv, argc ) ) {
                 fprintf( stderr, "ERROR: Unable to process command line arguments.\n" );
                 exit(EXIT_FAILURE);
         }
-
+        /* Build the list of images in 'source' command line argument. */
         FILE_LIST * file_list = build_file_list( cmd_line_args.src );
         if( file_list == NULL ) {
                 fprintf( stderr, "ERROR: Failed to build list of files.\n" );
                 exit(EXIT_FAILURE);
         }
-
         /* Check (print) the files in file_list. */
         if( SGK_DEBUG ) {
                 printf( "DEBUG: Files in file list:\n" );
@@ -258,6 +356,22 @@ int main( int argc, char * argv[] ) {
                         current = current->next;
                 } while ( current != start );
         }
+        /* Initialize SDL */
+        SDL_POINTERS sdl_pointers = {NULL, NULL, NULL};
+        if( sdl_init( &sdl_pointers ) ) {
+                fprintf( stderr, "ERROR: Unable to initialize SDL.\n" );
+                exit(EXIT_FAILURE);
+        }
+        /* Initialize ImageMagick */
+        if( imagick_init() ) {
+                fprintf( stderr, "ERROR: Unable to initialize ImageMagick.\n" );
+                exit(EXIT_FAILURE);
+        }
+        
+
+
+        /* Temporary. Add a delay so I can see SDL window. Remove after adding user input loop. */
+        sleep(3);
 
         // TODO: Free memory from the various structs before exiting.
         exit(EXIT_SUCCESS);
