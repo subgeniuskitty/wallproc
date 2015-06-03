@@ -19,7 +19,7 @@
  * =====================================================================================================================
  */
 
-/* This linked list is intended to hold the list of all files in the source directory. */
+/* This struct is intended for use in a linked-list of all files in the source directory. */
 typedef struct FILELIST {
         struct FILELIST * next; /* Pointer to next struct */
         struct FILELIST * prev; /* Pointer to previous struct */
