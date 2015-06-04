@@ -66,7 +66,8 @@ void clear_filelist_struct( FILE_LIST * ent );
 int sdl_init( SDL_POINTERS * sdl_pointers );
 int imagick_init( void );
 int sdl_clear( SDL_POINTERS * sdl_pointers );
-
+void initialize( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, 
+                 SDL_POINTERS * sdl_pointers, int argc, char * argv[] );
 /*
  * =====================================================================================================================
  * function definitions
@@ -327,7 +328,10 @@ int imagick_init( void ) {
         return 0;
 }
 
-int main( int argc, char * argv[] ) {
+/* Initialize everything. No return since this function exits the program on failure. */
+void initialize( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, 
+                 SDL_POINTERS * sdl_pointers, int argc, char * argv[] ) {
+
         /* Check for the right number of command line arguments. */
         if( argc != 5 && argc != 4 ) {
                 fprintf( stderr, "ERROR: Incorrect number of arguments.\n" );
@@ -335,13 +339,12 @@ int main( int argc, char * argv[] ) {
                 exit(EXIT_FAILURE);
         }
         /* Process the command line arguments. */
-        CMD_LINE_ARGS cmd_line_args = {"", "", 0.0, ""};
-        if( process_argv( &cmd_line_args, argv, argc ) ) {
+        if( process_argv( cmd_line_args, argv, argc ) ) {
                 fprintf( stderr, "ERROR: Unable to process command line arguments.\n" );
                 exit(EXIT_FAILURE);
         }
         /* Build the list of images in 'source' command line argument. */
-        FILE_LIST * file_list = build_file_list( cmd_line_args.src );
+        file_list = build_file_list( cmd_line_args->src );
         if( file_list == NULL ) {
                 fprintf( stderr, "ERROR: Failed to build list of files.\n" );
                 exit(EXIT_FAILURE);
@@ -357,8 +360,7 @@ int main( int argc, char * argv[] ) {
                 } while ( current != start );
         }
         /* Initialize SDL */
-        SDL_POINTERS sdl_pointers = {NULL, NULL, NULL};
-        if( sdl_init( &sdl_pointers ) ) {
+        if( sdl_init( sdl_pointers ) ) {
                 fprintf( stderr, "ERROR: Unable to initialize SDL.\n" );
                 exit(EXIT_FAILURE);
         }
@@ -367,8 +369,29 @@ int main( int argc, char * argv[] ) {
                 fprintf( stderr, "ERROR: Unable to initialize ImageMagick.\n" );
                 exit(EXIT_FAILURE);
         }
-        
+}
 
+int main( int argc, char * argv[] ) {
+        /*
+         * Create the main data structures and perform all required initialization.
+         */
+
+        /* Contains sanitized and typed command line arguments. */
+        CMD_LINE_ARGS * cmd_line_args = malloc(sizeof(CMD_LINE_ARGS));
+        if( cmd_line_args == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for cmd_line_args struct.\n" );
+                exit(EXIT_FAILURE);
+        }
+        /* Will point to current element of a cyclic, double-linked list of files in 'source'. */
+        FILE_LIST * file_list = NULL;
+        /* Contains window, renderer and texture pointers for SDL. */
+        SDL_POINTERS * sdl_pointers = malloc(sizeof(SDL_POINTERS));
+        if( sdl_pointers == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for sdl_pointers.\n" );
+                exit(EXIT_FAILURE);
+        }
+        /* Initializes everything that needs it. */
+        initialize( cmd_line_args, file_list, sdl_pointers, argc, argv );
 
         /* Temporary. Add a delay so I can see SDL window. Remove after adding user input loop. */
         sleep(3);
