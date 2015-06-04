@@ -52,6 +52,13 @@ typedef struct SDLPOINTERS {
         SDL_Texture * texture;
 } SDL_POINTERS;
 
+/* Holds pointers to each of the other structs. Should only be used during initialization, to simplify main(). */
+typedef struct INITPOINTERS {
+        struct FILELIST * file_list;
+        struct CMDLINEARGS * cmd_line_args;
+        struct SDLPOINTERS * sdl_pointers;
+} INIT_POINTERS;
+
 /*
  * =====================================================================================================================
  * function declarations
@@ -66,8 +73,9 @@ void clear_filelist_struct( FILE_LIST * ent );
 int sdl_init( SDL_POINTERS * sdl_pointers );
 int imagick_init( void );
 int sdl_clear( SDL_POINTERS * sdl_pointers );
-void initialize( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, 
-                 SDL_POINTERS * sdl_pointers, int argc, char * argv[] );
+void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] );
+void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+
 /*
  * =====================================================================================================================
  * function definitions
@@ -329,38 +337,48 @@ int imagick_init( void ) {
 }
 
 /* Initialize everything. No return since this function exits the program on failure. */
-void initialize( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, 
-                 SDL_POINTERS * sdl_pointers, int argc, char * argv[] ) {
-
+void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] ) {
         /* Check for the right number of command line arguments. */
         if( argc != 5 && argc != 4 ) {
                 fprintf( stderr, "ERROR: Incorrect number of arguments.\n" );
                 print_usage(argv);
                 exit(EXIT_FAILURE);
         }
+        /* Malloc space to hold the command line arguements struct. */
+        init_pointers->cmd_line_args = malloc(sizeof(CMD_LINE_ARGS));
+        if( init_pointers->cmd_line_args == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for cmd_line_args struct.\n" );
+                exit(EXIT_FAILURE);
+        }
         /* Process the command line arguments. */
-        if( process_argv( cmd_line_args, argv, argc ) ) {
+        if( process_argv( init_pointers->cmd_line_args, argv, argc ) ) {
                 fprintf( stderr, "ERROR: Unable to process command line arguments.\n" );
                 exit(EXIT_FAILURE);
         }
         /* Build the list of images in 'source' command line argument. */
-        file_list = build_file_list( cmd_line_args->src );
-        if( file_list == NULL ) {
+        init_pointers->file_list = build_file_list( init_pointers->cmd_line_args->src );
+        if( init_pointers->file_list == NULL ) {
                 fprintf( stderr, "ERROR: Failed to build list of files.\n" );
                 exit(EXIT_FAILURE);
         }
         /* Check (print) the files in file_list. */
         if( SGK_DEBUG ) {
                 printf( "DEBUG: Files in file list:\n" );
-                FILE_LIST * start = file_list;
-                FILE_LIST * current = file_list;
+                FILE_LIST * start = init_pointers->file_list;
+                FILE_LIST * current = init_pointers->file_list;
                 do {
                         printf( "DEBUG:  -- %s\n", current->path );
                         current = current->next;
                 } while ( current != start );
         }
+        /* Malloc space to hold the SDL pointers struct. */
+        init_pointers->sdl_pointers = malloc(sizeof(SDL_POINTERS));
+        if( init_pointers->sdl_pointers == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for sdl_pointers.\n" );
+                exit(EXIT_FAILURE);
+        }
         /* Initialize SDL */
-        if( sdl_init( sdl_pointers ) ) {
+        if( sdl_init( init_pointers->sdl_pointers ) ) {
                 fprintf( stderr, "ERROR: Unable to initialize SDL.\n" );
                 exit(EXIT_FAILURE);
         }
@@ -371,31 +389,70 @@ void initialize( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list,
         }
 }
 
+/* Frees relevant memory and prepares program for imminent termination. */
+/* No return since we intend to exit promptly after this function is finished. */
+void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        /* Free memory related to command line arguments. */
+        free( cmd_line_args->src );
+        free( cmd_line_args->dst );
+        free( cmd_line_args->archive );
+        free( cmd_line_args );
+
+        /* Free memory related to list of files. */
+        FILE_LIST * current = file_list->next;
+        file_list->next = NULL;
+        while( current->next != NULL ) {
+                free( current->path );
+                current = current->next;
+                free( current->prev );
+        }
+
+        /* Terminate SDL. */
+        SDL_DestroyTexture( sdl_pointers->texture );
+        sdl_pointers->texture = NULL;
+        SDL_DestroyRenderer( sdl_pointers->renderer );
+        sdl_pointers->renderer = NULL;
+        SDL_DestroyWindow( sdl_pointers->window );
+        sdl_pointers->window = NULL;
+        SDL_Quit();
+
+        /* Free memory related to SDL. */
+        free( sdl_pointers );
+
+        /* Terminate ImageMagick. */
+        MagickWandTerminus();
+}
+
 int main( int argc, char * argv[] ) {
         /*
          * Create the main data structures and perform all required initialization.
          */
 
-        /* Contains sanitized and typed command line arguments. */
-        CMD_LINE_ARGS * cmd_line_args = malloc(sizeof(CMD_LINE_ARGS));
-        if( cmd_line_args == NULL ) {
-                fprintf( stderr, "ERROR: Unable to malloc for cmd_line_args struct.\n" );
-                exit(EXIT_FAILURE);
-        }
-        /* Will point to current element of a cyclic, double-linked list of files in 'source'. */
-        FILE_LIST * file_list = NULL;
-        /* Contains window, renderer and texture pointers for SDL. */
-        SDL_POINTERS * sdl_pointers = malloc(sizeof(SDL_POINTERS));
-        if( sdl_pointers == NULL ) {
-                fprintf( stderr, "ERROR: Unable to malloc for sdl_pointers.\n" );
+        /* The init_pointers struct is only intended to keep main() clean. */
+        INIT_POINTERS * init_pointers = malloc(sizeof(INIT_POINTERS));
+        if( init_pointers == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for init_pointers struct.\n" );
                 exit(EXIT_FAILURE);
         }
         /* Initializes everything that needs it. */
-        initialize( cmd_line_args, file_list, sdl_pointers, argc, argv );
+        initialize( init_pointers, argc, argv );
+        /* Contains sanitized and typed command line arguments. */
+        CMD_LINE_ARGS * cmd_line_args = init_pointers->cmd_line_args;
+        /* Will point to current element of a cyclic, double-linked list of files in 'source'. */
+        FILE_LIST * file_list = init_pointers->file_list;
+        /* Contains window, renderer and texture pointers for SDL. */
+        SDL_POINTERS * sdl_pointers = init_pointers->sdl_pointers;
+        /* We are now finished with the init_pointers struct. */
+        free( init_pointers );
+
 
         /* Temporary. Add a delay so I can see SDL window. Remove after adding user input loop. */
         sleep(3);
 
-        // TODO: Free memory from the various structs before exiting.
+        /*
+         * Free memory, close subsystems and exit.
+         */
+
+        terminate( cmd_line_args, file_list, sdl_pointers );
         exit(EXIT_SUCCESS);
 }
