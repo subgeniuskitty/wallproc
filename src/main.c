@@ -75,6 +75,7 @@ int imagick_init( void );
 int sdl_clear( SDL_POINTERS * sdl_pointers );
 void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] );
 void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 
 /*
  * =====================================================================================================================
@@ -422,6 +423,61 @@ void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTE
         /* Terminate ImageMagick. */
         MagickWandTerminus();
 }
+/* Processes a single SDL event, initiating whatever action the event requires. */
+/* Returns non-zero if program should terminate, otherwise returns zero. */
+int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        int ret_val = 0;
+
+        switch( event->type ) {
+                case SDL_QUIT:
+                        ret_val = 1;
+                        break;
+                case SDL_WINDOWEVENT:
+                        // TODO: Should I specify events to handle, or just leave this as a catch-all?
+                        //       Test the performance while dragging the window around the desktop with a large image loaded.
+                        //       Note: My computer might be a bad example since my WM only draws window outline while moving. Test with a WM that shows window contents while dragging.
+                        //       https://wiki.libsdl.org/SDL_WindowEvent
+                        break;
+                case SDL_KEYDOWN:
+                        switch( event->key.keysym.sym ) {
+                                case KEY_QUIT:
+                                        ret_val = 1;
+                                        break;
+                                case KEY_HELP:
+                                        break;
+                                case KEY_NEXT:
+                                        break;
+                                case KEY_PREV:
+                                        break;
+                                case KEY_SIZEUP:
+                                        break;
+                                case KEY_SIZEDOWN:
+                                        break;
+                                case KEY_LEFT:
+                                        break;
+                                case KEY_RIGHT:
+                                        break;
+                                case KEY_UP:
+                                        break;
+                                case KEY_DOWN:
+                                        break;
+                                case KEY_SELECTIONBOX_RESET:
+                                        break;
+                                case KEY_TOGGLE_OUTLINE_COLOR:
+                                        break;
+                                default:
+                                        // TODO: Should I display help if unrecognized key is pressed?
+                                        break;
+
+                        }
+                        break;
+                default:
+                        // TODO: Ignore all other actions?
+                        break;
+        }
+
+        return ret_val;
+}
 
 int main( int argc, char * argv[] ) {
         /*
@@ -445,9 +501,17 @@ int main( int argc, char * argv[] ) {
         /* We are now finished with the init_pointers struct. */
         free( init_pointers );
 
+        /*
+         * Main program loop
+         */
 
-        /* Temporary. Add a delay so I can see SDL window. Remove after adding user input loop. */
-        sleep(3);
+        int quit = 0;
+        SDL_Event event;
+        while( quit == 0 ) {
+                if( SDL_WaitEvent( &event ) ) {
+                        quit = process_sdl_event( &event, file_list, sdl_pointers );
+                }
+        }
 
         /*
          * Free memory, close subsystems and exit.
