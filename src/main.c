@@ -15,7 +15,7 @@
 
 /*
  * =====================================================================================================================
- * structs
+ * type declarations
  * =====================================================================================================================
  */
 
@@ -59,6 +59,13 @@ typedef struct INITPOINTERS {
         struct SDLPOINTERS * sdl_pointers;
 } INIT_POINTERS;
 
+/* Use to improve readability when traversing FILE_LIST structs. */
+typedef enum DIRECTION {
+        prev,
+        none,
+        next
+} DIRECTION;
+
 /*
  * =====================================================================================================================
  * function declarations
@@ -75,7 +82,13 @@ int imagick_init( void );
 int sdl_clear( SDL_POINTERS * sdl_pointers );
 void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] );
 void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
-int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void sdl_test( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void imagick_test( FILE_LIST * file_list );
+void del_file_from_list( FILE_LIST * file_list );
+FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void reset_sel_box( FILE_LIST * file_list );
+void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 
 /*
  * =====================================================================================================================
@@ -157,8 +170,10 @@ FILE_LIST * build_file_list( char * source ) {
         }
 
         /* Close the loop */
-        first->prev = last;
-        last->next = first;
+        if( first != NULL && last != NULL ) {
+                first->prev = last;
+                last->next = first;
+        }
         
         return first;
 }
@@ -423,14 +438,156 @@ void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTE
         /* Terminate ImageMagick. */
         MagickWandTerminus();
 }
-/* Processes a single SDL event, initiating whatever action the event requires. */
-/* Returns non-zero if program should terminate, otherwise returns zero. */
-int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
-        int ret_val = 0;
 
+
+void del_file_from_list( FILE_LIST * file_list ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Removing file from list: %s\n", file_list->path );
+        /* Make the next element in the file_list loop point to the previous element and vice versa. */
+        file_list->prev->next = file_list->next;
+        file_list->next->prev = file_list->prev;
+        /* Since we have isolated this file_list element, we can now delete it. */
+        free(file_list->path);
+        free(file_list);
+}
+
+/* Attempts to load the file referenced in 'file_list' with SDL. */
+/* On failure, removes file_list from the FILE_LIST struct loop. */
+/* On success, sets file_list->valid_sdl = 1. */
+void sdl_test( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Test-loading image with SDL: %s", file_list->path );
+        if( file_list->valid_sdl == 1 ) {
+                if( SGK_DEBUG ) printf( " -- already tested\n" );
+                return;
+        }
+        sdl_pointers->texture = IMG_LoadTexture( sdl_pointers->renderer, file_list->path );
+        if( sdl_pointers->texture == NULL ) {
+                if( SGK_DEBUG ) printf( " -- failure\n" );
+                del_file_from_list( file_list );
+        } else {
+                if( SGK_DEBUG ) printf( " -- success\n" );
+                file_list->valid_sdl = 1;
+        }
+}
+
+/* Attempts to load the file referenced in 'file_list' with ImageMagick. */
+/* On failure, removes file_list from the FILE_LIST struct loop. */
+/* On success, sets file_list->valid_imagick = 1 and relevant selection box values (example: file_list->sel_x). */
+void imagick_test( FILE_LIST * file_list ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Test-loading image with ImageMagick: %s", file_list->path );
+        if( file_list->valid_imagick == 1 ) {
+                if( SGK_DEBUG ) printf( " -- already tested\n" );
+                return;
+        }
+        MagickBooleanType magick_status;
+        MagickWand * magick_wand = NewMagickWand();
+        magick_status = MagickReadImage( magick_wand, file_list->path );
+        if( magick_status == MagickFalse ) {
+                if( SGK_DEBUG ) printf( " -- failure\n" );
+                del_file_from_list( file_list );
+        } else {
+                if( SGK_DEBUG ) printf( " -- success\n" );
+                file_list->img_h = MagickGetImageHeight( magick_wand );
+                file_list->img_w = MagickGetImageWidth( magick_wand );
+                reset_sel_box( file_list );
+                file_list->valid_imagick = 1;
+        }
+}
+
+/* Set defaults for the following elements of the file_list struct: sel_h, sel_w, sel_x, sel_y. */
+/* Requires that img_h and img_w are already set. */
+void reset_sel_box( FILE_LIST * file_list ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Resetting selection box for file: %s\n", file_list->path );
+        /* Set selection box to half the vertical and horizontal image dimensions and center it. */
+        file_list->sel_h = file_list->img_h / 2;
+        file_list->sel_y = file_list->img_h / 4;
+        file_list->sel_w = file_list->img_w / 2;
+        file_list->sel_x = file_list->img_w / 4;
+}
+
+/* Populates 'rect' based on file_list such that image aspect ratio is retained and image fills the SDL window. */
+void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        int window_w = 0;
+        int window_h = 0;
+        SDL_GetWindowSize( sdl_pointers->window, &window_w, &window_h );
+
+        double window_aspect = (double) window_w / (double) window_h;
+        double texture_aspect = (double) file_list->img_w / (double) file_list->img_h;
+        if( window_aspect > texture_aspect ) {
+                /* Window is wider aspect ratio than texture */
+                rect->y = 0;                            /* No vertical offset */
+                rect->h = window_h;                     /* Fill vertical space */
+                rect->w = window_h * texture_aspect;    /* Maintain image aspect ratio */
+                rect->x = ( window_w - rect->w ) / 2;   /* Horizontal offset to center image */
+        } else {
+                /* Window is narrower (or identical) aspect ratio than texture */
+                rect->x = 0;                            /* No horizontal offset */
+                rect->w = window_w;                     /* Fill horizontal space */
+                rect->h = window_w / texture_aspect;    /* Maintain image aspect ratio */
+                rect->y = ( window_h - rect->h ) / 2;   /* Vertical offset to center image */
+        }
+
+        if( SGK_DEBUG ) {
+                printf( "DEBUG: For SDL window size %dx%d and image size %dx%d, setting texture render box to: "
+                        "(%d+%d)x(%d+%d)\n", window_w, window_h, file_list->img_w, file_list->img_h, rect->w,
+                        rect->x, rect->h, rect->y );
+        }
+}
+
+/* Draws the next/prev/current image (based on 'dir') and returns a FILE_LIST* to the file_list that was drawn. */
+FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Entering function draw().\n" );
+
+        switch( dir ) { /* Traverse file_list in requested direction until a valid image is found. */
+                case prev:
+                        while( file_list->prev->valid_sdl != 1 || file_list->prev->valid_imagick != 1 ) {
+                                if( file_list->prev->valid_sdl != 1 ) sdl_test( file_list->prev, sdl_pointers );
+                                if( file_list->prev->valid_imagick != 1 ) imagick_test( file_list->prev );
+                        }
+                        file_list = file_list->prev;
+                        break;
+                case next:
+                        while( file_list->next->valid_sdl != 1 || file_list->next->valid_imagick != 1 ) {
+                                if( file_list->next->valid_sdl != 1 ) sdl_test( file_list->next, sdl_pointers );
+                                if( file_list->next->valid_imagick != 1 ) imagick_test( file_list->next );
+                        }
+                        file_list = file_list->next;
+                        break;
+                case none:
+                        break;
+        }
+
+        /* Clear the screen. */
+        sdl_clear( sdl_pointers );
+
+        /* Draw the image and selection box. */
+        int window_w = 0;
+        int window_h = 0;
+        // TODO: Check these functions for return codes.
+        SDL_GetWindowSize( sdl_pointers->window, &window_w, &window_h );
+        SDL_RenderSetLogicalSize( sdl_pointers->renderer, window_w, window_h );
+        sdl_pointers->texture = IMG_LoadTexture( sdl_pointers->renderer, file_list->path );
+        if( sdl_pointers->texture == NULL ) {
+                // TODO: Do what here? Should I remove this element from file_list? 
+        } else {
+                SDL_Rect texture_dest_box = {0,0,0,0};
+                sdl_texture_rect( &texture_dest_box, file_list, sdl_pointers );
+                SDL_RenderCopy( sdl_pointers->renderer, sdl_pointers->texture, NULL, &texture_dest_box );
+                SDL_RenderPresent( sdl_pointers->renderer ); // temporary, just so I can see what is going on.
+                // TODO: Render the selection box
+                // TODO: Update titlebar
+        }
+        
+        if( SGK_DEBUG ) printf( "DEBUG: Leaving function draw().\n" );
+
+        return file_list;
+}
+
+/* Processes a single SDL event, initiating whatever action the event requires. */
+/* Returns NULL if program should terminate, otherwise returns FILE_LIST* to most current file_list. */
+FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
         switch( event->type ) {
                 case SDL_QUIT:
-                        ret_val = 1;
+                        file_list = NULL;
                         break;
                 case SDL_WINDOWEVENT:
                         // TODO: Should I specify events to handle, or just leave this as a catch-all?
@@ -441,13 +598,15 @@ int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * 
                 case SDL_KEYDOWN:
                         switch( event->key.keysym.sym ) {
                                 case KEY_QUIT:
-                                        ret_val = 1;
+                                        file_list = NULL;
                                         break;
                                 case KEY_HELP:
                                         break;
                                 case KEY_NEXT:
+                                        file_list = draw( next, file_list, sdl_pointers );
                                         break;
                                 case KEY_PREV:
+                                        file_list = draw( prev, file_list, sdl_pointers );
                                         break;
                                 case KEY_SIZEUP:
                                         break;
@@ -476,7 +635,7 @@ int process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * 
                         break;
         }
 
-        return ret_val;
+        return file_list;
 }
 
 int main( int argc, char * argv[] ) {
@@ -501,17 +660,26 @@ int main( int argc, char * argv[] ) {
         /* We are now finished with the init_pointers struct. */
         free( init_pointers );
 
+        // TODO: Draw first element. Make sure a valid element actually exists. Perhaps put this in the init section?
+        
         /*
          * Main program loop
          */
 
         int quit = 0;
+        FILE_LIST * temp = NULL;
         SDL_Event event;
         while( quit == 0 ) {
                 if( SDL_WaitEvent( &event ) ) {
-                        quit = process_sdl_event( &event, file_list, sdl_pointers );
+                        temp = process_sdl_event( &event, file_list, sdl_pointers );
+                        if( temp == NULL ) {
+                                quit = 1;
+                        } else {
+                                file_list = temp;
+                        }
                 }
         }
+
 
         /*
          * Free memory, close subsystems and exit.
