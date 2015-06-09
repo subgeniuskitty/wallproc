@@ -739,21 +739,15 @@ int main( int argc, char * argv[] ) {
          */
 
         /* The init_pointers struct is only intended to keep main() clean. */
-        INIT_POINTERS * init_pointers = malloc(sizeof(INIT_POINTERS));
-        if( init_pointers == NULL ) {
-                fprintf( stderr, "ERROR: Unable to malloc for init_pointers struct.\n" );
-                exit(EXIT_FAILURE);
-        }
+        INIT_POINTERS init_pointers = {NULL, NULL, NULL};
         /* Initializes everything that needs it. */
-        initialize( init_pointers, argc, argv );
+        initialize( &init_pointers, argc, argv );
         /* Contains sanitized and typed command line arguments. */
-        CMD_LINE_ARGS * cmd_line_args = init_pointers->cmd_line_args;
+        CMD_LINE_ARGS * cmd_line_args = init_pointers.cmd_line_args;
         /* Will point to current element of a cyclic, double-linked list of files in 'source'. */
-        FILE_LIST * file_list = init_pointers->file_list;
+        FILE_LIST * file_list = init_pointers.file_list;
         /* Contains window, renderer and texture pointers for SDL. */
-        SDL_POINTERS * sdl_pointers = init_pointers->sdl_pointers;
-        /* We are now finished with the init_pointers struct. */
-        free( init_pointers );
+        SDL_POINTERS * sdl_pointers = init_pointers.sdl_pointers;
 
         // TODO: Draw first element. Make sure a valid element actually exists. Perhaps put this in the init section?
         
