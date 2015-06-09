@@ -714,6 +714,8 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                 case KEY_DOWN:
                                         break;
                                 case KEY_SELECTIONBOX_RESET:
+                                        reset_sel_box( file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_TOGGLE_OUTLINE_COLOR:
                                         toggle_selection_color( file_list );
