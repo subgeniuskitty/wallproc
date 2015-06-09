@@ -34,6 +34,7 @@ typedef struct FILELIST {
         int sel_g;              /* Selection box greeb color value from 0-255 */
         int sel_b;              /* Selection box blue color value from 0-255 */
         int sel_a;              /* Selection box alpha value from 0-255 */
+        double aspect;          /* Desired aspect ratio */
         int valid_sdl;          /* Set to 1 when image has been verified by SDL */
         int valid_imagick;      /* Set to 1 when image has been verified by ImageMagick */
 } FILE_LIST;
@@ -63,11 +64,13 @@ typedef struct INITPOINTERS {
         struct SDLPOINTERS * sdl_pointers;
 } INIT_POINTERS;
 
-/* Use to improve readability when traversing FILE_LIST structs. */
+/* Use to improve readability. */
 typedef enum DIRECTION {
-        prev,
         none,
-        next
+        up,
+        left,
+        down,
+        right
 } DIRECTION;
 
 /*
@@ -79,7 +82,7 @@ typedef enum DIRECTION {
 int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc );
 void print_usage( char * argv[] );
 char * sanitize_path( char * path );
-FILE_LIST * build_file_list( char * source );
+FILE_LIST * build_file_list( char * source, double aspect );
 void clear_filelist_struct( FILE_LIST * ent );
 int sdl_init( SDL_POINTERS * sdl_pointers );
 int imagick_init( void );
@@ -96,6 +99,7 @@ void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sd
 void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void toggle_selection_color( FILE_LIST * file_list );
 void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void change_sel_size( DIRECTION dir, FILE_LIST * file_list );
 
 /*
  * =====================================================================================================================
@@ -117,13 +121,14 @@ void clear_filelist_struct( FILE_LIST * ent ) {
         ent->sel_g = 255;
         ent->sel_b = 255;
         ent->sel_a = 255;
+        ent->aspect = 0.0;
         ent->valid_sdl = 0;
         ent->valid_imagick = 0;
 }
 
 /* Builds list of files in source. Non-recursive. */
 /* Returns NULL if no items found. Otherwise returns a double-linked list of FILE_LIST structs. */
-FILE_LIST * build_file_list( char * source ) {
+FILE_LIST * build_file_list( char * source, double aspect ) {
         DIR * dir = NULL;
         struct dirent * ent = NULL;
 
@@ -162,6 +167,8 @@ FILE_LIST * build_file_list( char * source ) {
                                         } else {
                                                 /* Copy the string, including the relative path from PWD. */
                                                 snprintf( temp->path, len, "%s/%s", source, ent->d_name );
+                                                /* Add the desired aspect ratio field. */
+                                                temp->aspect = aspect;
                                         }
                                         if( temp != NULL ) { /* We have a valid entry to add. */
                                                 if( first == NULL ) {
@@ -383,7 +390,8 @@ void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] ) {
                 exit(EXIT_FAILURE);
         }
         /* Build the list of images in 'source' command line argument. */
-        init_pointers->file_list = build_file_list( init_pointers->cmd_line_args->src );
+        init_pointers->file_list = build_file_list( init_pointers->cmd_line_args->src, 
+                        init_pointers->cmd_line_args->aspect );
         if( init_pointers->file_list == NULL ) {
                 fprintf( stderr, "ERROR: Failed to build list of files.\n" );
                 exit(EXIT_FAILURE);
@@ -508,11 +516,23 @@ void imagick_test( FILE_LIST * file_list ) {
 /* Requires that img_h and img_w are already set. */
 void reset_sel_box( FILE_LIST * file_list ) {
         if( SGK_DEBUG ) printf( "DEBUG: Resetting selection box for file: %s\n", file_list->path );
-        /* Set selection box to half the vertical and horizontal image dimensions and center it. */
-        file_list->sel_h = file_list->img_h / 2;
-        file_list->sel_y = file_list->img_h / 4;
-        file_list->sel_w = file_list->img_w / 2;
-        file_list->sel_x = file_list->img_w / 4;
+
+        double img_aspect = (double) file_list->img_w / (double) file_list->img_h;
+
+        /* Set selection box dimensions */
+        if( img_aspect > file_list->aspect ) {
+                /* Image is wider than desired aspect ratio. */
+                file_list->sel_h = file_list->img_h;
+                file_list->sel_w = file_list->sel_h * file_list->aspect;
+        } else {
+                /* Image is narrower than (or identical to) desired aspect ratio. */
+                file_list->sel_w = file_list->img_w;
+                file_list->sel_h = file_list->sel_w / file_list->aspect;
+        }
+
+        /* Center selection box */
+        file_list->sel_x = ( file_list->img_w - file_list->sel_w ) / 2;
+        file_list->sel_y = ( file_list->img_h - file_list->sel_h ) / 2;
 }
 
 /* Populates 'rect' based on file_list such that image aspect ratio is retained and image fills the SDL window. */
@@ -608,20 +628,22 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
         if( SGK_DEBUG ) printf( "DEBUG: Entering function draw().\n" );
 
         switch( dir ) { /* Traverse file_list in requested direction until a valid image is found. */
-                case prev:
+                case left:
                         while( file_list->prev->valid_sdl != 1 || file_list->prev->valid_imagick != 1 ) {
                                 if( file_list->prev->valid_sdl != 1 ) sdl_test( file_list->prev, sdl_pointers );
                                 if( file_list->prev->valid_imagick != 1 ) imagick_test( file_list->prev );
                         }
                         file_list = file_list->prev;
                         break;
-                case next:
+                case right:
                         while( file_list->next->valid_sdl != 1 || file_list->next->valid_imagick != 1 ) {
                                 if( file_list->next->valid_sdl != 1 ) sdl_test( file_list->next, sdl_pointers );
                                 if( file_list->next->valid_imagick != 1 ) imagick_test( file_list->next );
                         }
                         file_list = file_list->next;
                         break;
+                case up:
+                case down:
                 case none:
                         break;
         }
@@ -673,6 +695,67 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
         return file_list;
 }
 
+/* Changes selection box size and keeps it within upper and lower bounds. */
+void change_sel_size( DIRECTION dir, FILE_LIST * file_list ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Decreasing selection box size.\n" );
+
+        int temp_w = 0;
+        int temp_h = 0;
+
+        switch( dir ) {
+                case up:
+                        temp_w = file_list->sel_w * (1 + SELECT_SIZE_MULT);
+                        temp_h = temp_w / file_list->aspect;
+                        break;
+                case down:
+                        temp_w = file_list->sel_w * (1 - SELECT_SIZE_MULT);
+                        temp_h = temp_w / file_list->aspect;
+                        break;
+                case left:
+                case right:
+                case none:
+                        break;
+        }
+
+        /* If either dimension goes below 1/SELECT_SIZE_MULT, then inc_sel_size() will be unable to function. */
+        /* Although there exist four cases, we only need to handle two cases due to the aspect constraint. */
+        while( temp_w < 1/SELECT_SIZE_MULT || temp_h < 1/SELECT_SIZE_MULT ) {
+                if( file_list->aspect > 1 ) {
+                        temp_h = 1/SELECT_SIZE_MULT + 1;
+                        temp_w = temp_h * file_list->aspect;
+                } else {
+                        temp_w = 1/SELECT_SIZE_MULT + 1;
+                        temp_h = temp_w / file_list->aspect;
+                }
+        }
+
+        /* Constrain selection box size with image dimensions. */
+        while( temp_w > file_list->img_w || temp_h > file_list->img_h ) {
+                if( temp_w > file_list->img_w ) {
+                        temp_h = temp_h * ( (double) file_list->img_w / (double) temp_w );
+                        temp_w = file_list->img_w;
+                }
+                if( temp_h > file_list->img_h ) {
+                        temp_w = temp_w * ( (double) file_list->img_h / (double) temp_h );
+                        temp_h = file_list->img_h;
+                }
+        }
+
+        if( SGK_DEBUG ) {
+                printf( "DEBUG:  -- Image dimensions: %dx%d\n", file_list->img_w, file_list->img_h );
+                printf( "DEBUG:  -- Old selection dimensions: %dx%d\n", file_list->sel_w, file_list->sel_h );
+                printf( "DEBUG:  -- New selection dimensions: %dx%d\n", temp_w, temp_h );
+        }
+
+        /* Center selection box exactly where it used to be centered. */
+        file_list->sel_x = file_list->sel_x + ( file_list->sel_w / 2 ) - ( temp_w / 2 );
+        file_list->sel_y = file_list->sel_y + ( file_list->sel_h / 2 ) - ( temp_h / 2 );
+
+        /* Store temporary values as new selection box dimensions. */
+        file_list->sel_w = temp_w;
+        file_list->sel_h = temp_h;
+}
+
 /* Processes a single SDL event, initiating whatever action the event requires. */
 /* Returns NULL if program should terminate, otherwise returns FILE_LIST* to most current file_list. */
 FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
@@ -696,14 +779,18 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                 case KEY_HELP:
                                         break;
                                 case KEY_NEXT:
-                                        file_list = draw( next, file_list, sdl_pointers );
+                                        file_list = draw( right, file_list, sdl_pointers );
                                         break;
                                 case KEY_PREV:
-                                        file_list = draw( prev, file_list, sdl_pointers );
+                                        file_list = draw( left, file_list, sdl_pointers );
                                         break;
                                 case KEY_SIZEUP:
+                                        change_sel_size( up, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_SIZEDOWN:
+                                        change_sel_size( down, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_LEFT:
                                         break;

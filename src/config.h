@@ -35,5 +35,12 @@
  * =====================================================================================================================
  */
 
+/*
+ * Multiplicative step size for selection box resizing. 
+ * Example: A value of 0.05 means the selection box will scale up or down 
+ * in size by 5% each time the relevant key is depressed. 
+ */
+#define SELECT_SIZE_MULT 0.05
+
 /* Set to 1 to enable debugging info on console. */
 #define SGK_DEBUG 1 
