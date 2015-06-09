@@ -110,7 +110,7 @@ void change_sel_size( DIRECTION dir, FILE_LIST * file_list );
 void clear_filelist_struct( FILE_LIST * ent ) {
         ent->next = NULL;
         ent->prev = NULL;
-        ent->path = "";
+        ent->path = NULL;
         ent->img_h = 0;
         ent->img_w = 0;
         ent->sel_h = 0;
