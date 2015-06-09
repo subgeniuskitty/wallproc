@@ -30,6 +30,10 @@ typedef struct FILELIST {
         int sel_w;              /* Selection box horizontal dimensions in pixels */
         int sel_x;              /* Selection box horizontal offset in pixels */
         int sel_y;              /* Selection box vertical offset in pixels */
+        int sel_r;              /* Selection box red color value from 0-255 */
+        int sel_g;              /* Selection box greeb color value from 0-255 */
+        int sel_b;              /* Selection box blue color value from 0-255 */
+        int sel_a;              /* Selection box alpha value from 0-255 */
         int valid_sdl;          /* Set to 1 when image has been verified by SDL */
         int valid_imagick;      /* Set to 1 when image has been verified by ImageMagick */
 } FILE_LIST;
@@ -89,6 +93,9 @@ void del_file_from_list( FILE_LIST * file_list );
 FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void reset_sel_box( FILE_LIST * file_list );
 void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+void toggle_selection_color( FILE_LIST * file_list );
+void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 
 /*
  * =====================================================================================================================
@@ -106,6 +113,10 @@ void clear_filelist_struct( FILE_LIST * ent ) {
         ent->sel_w = 0;
         ent->sel_x = 0;
         ent->sel_y = 0;
+        ent->sel_r = 255;
+        ent->sel_g = 255;
+        ent->sel_b = 255;
+        ent->sel_a = 255;
         ent->valid_sdl = 0;
         ent->valid_imagick = 0;
 }
@@ -439,7 +450,7 @@ void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTE
         MagickWandTerminus();
 }
 
-
+/* Removes file_list from the linked list and stiches the previous and next entries together. */
 void del_file_from_list( FILE_LIST * file_list ) {
         if( SGK_DEBUG ) printf( "DEBUG: Removing file from list: %s\n", file_list->path );
         /* Make the next element in the file_list loop point to the previous element and vice versa. */
@@ -533,6 +544,65 @@ void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sd
         }
 }
 
+/* Toggles selection box color as stored in file_list. */
+void toggle_selection_color( FILE_LIST * file_list ) {
+        /* For now, we only toggle between black and white selection boxes. */
+        if( file_list->sel_r == 0 ) {
+                file_list->sel_r = 255;
+                file_list->sel_g = 255;
+                file_list->sel_b = 255;
+        } else {
+                file_list->sel_r = 0;
+                file_list->sel_g = 0;
+                file_list->sel_b = 0;
+        }
+}
+
+/* Populates 'sel_rect' with selection box as stored in file_list, but scaled to current window dimensions. */
+void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        /* Get SDL_Rect for the current image at the current SDL window resolution. */
+        SDL_Rect img_rect = {0,0,0,0};
+        sdl_texture_rect( &img_rect, file_list, sdl_pointers );
+
+        /* Scaling factor for image -> monitor pixels. */
+        double scale = (double) img_rect.w / (double) file_list->img_w;
+
+        /* Selection box width and height scale directly and at same scale as the image itself. */
+        sel_rect->w = scale * file_list->sel_w;
+        sel_rect->h = scale * file_list->sel_h;
+
+        /* The calculated offset combines the raw image offset and the scaled selection box offset. */
+        sel_rect->x = img_rect.x + ( scale * file_list->sel_x );
+        sel_rect->y = img_rect.y + ( scale * file_list->sel_y );
+
+        if( SGK_DEBUG ) {
+                printf( "DEBUG: Generating selection box rectangle.\n" );
+                printf( "DEBUG:  -- Scale: %f\n", scale );
+                printf( "DEBUG:  -- Image dimensions: %dx%d\n", file_list->img_w, file_list->img_h );
+                printf( "DEBUG:  -- Image rectangle: (%d+%d)x(%d+%d)\n", 
+                                img_rect.w, img_rect.x, img_rect.h, img_rect.y );
+                printf( "DEBUG:  -- Selection dimensions: %dx%d\n", file_list->sel_w, file_list->sel_h );
+                printf( "DEBUG:  -- Selection rectangle: (%d+%d)x(%d+%d)\n", 
+                                sel_rect->w, sel_rect->x, sel_rect->h, sel_rect->y );
+        }
+}
+
+/* Updates titlebar of SDL window for currently displayed image. */
+void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        char * title = NULL;
+        int length = snprintf( title, 0, "wallproc -- Selection: %dx%d -- File: %s", 
+                        file_list->sel_w, file_list->sel_h, file_list->path );
+        title = malloc( length+1 );
+        if( title == NULL ) {
+                SDL_SetWindowTitle( sdl_pointers->window, "wallproc" );
+        } else {
+                snprintf( title, length+1, "wallproc -- Selection: %dx%d -- File: %s",
+                                file_list->sel_w, file_list->sel_h, file_list->path );
+                SDL_SetWindowTitle( sdl_pointers->window, title );
+                free(title);
+        }
+}
+
 /* Draws the next/prev/current image (based on 'dir') and returns a FILE_LIST* to the file_list that was drawn. */
 FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
         if( SGK_DEBUG ) printf( "DEBUG: Entering function draw().\n" );
@@ -559,22 +629,43 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
         /* Clear the screen. */
         sdl_clear( sdl_pointers );
 
-        /* Draw the image and selection box. */
+        /* Load the image texture. */
         int window_w = 0;
         int window_h = 0;
-        // TODO: Check these functions for return codes.
+        int temp = 0;
         SDL_GetWindowSize( sdl_pointers->window, &window_w, &window_h );
-        SDL_RenderSetLogicalSize( sdl_pointers->renderer, window_w, window_h );
+        temp = SDL_RenderSetLogicalSize( sdl_pointers->renderer, window_w, window_h );
+        if( temp ) fprintf( stderr, "ERROR: Unable to set renderer size: %s\n", SDL_GetError() );
         sdl_pointers->texture = IMG_LoadTexture( sdl_pointers->renderer, file_list->path );
         if( sdl_pointers->texture == NULL ) {
-                // TODO: Do what here? Should I remove this element from file_list? 
+                /* 
+                 * The texture *should* always load since we loaded it before setting the valid_sdl flag.
+                 * However, if the texture fails to load, try to draw() in the same direction, and then 
+                 * remove the failed image file_list struct.
+                 */
+                FILE_LIST * bad = file_list;
+                file_list = draw( dir, file_list, sdl_pointers );
+                del_file_from_list( bad );
         } else {
+                /* Texture loaded successfully. */
+                /* Calculate scaling to load texture in current SDL window. */
                 SDL_Rect texture_dest_box = {0,0,0,0};
                 sdl_texture_rect( &texture_dest_box, file_list, sdl_pointers );
-                SDL_RenderCopy( sdl_pointers->renderer, sdl_pointers->texture, NULL, &texture_dest_box );
-                SDL_RenderPresent( sdl_pointers->renderer ); // temporary, just so I can see what is going on.
-                // TODO: Render the selection box
-                // TODO: Update titlebar
+                /* Load texture to renderer. */
+                temp = SDL_RenderCopy( sdl_pointers->renderer, sdl_pointers->texture, NULL, &texture_dest_box );
+                if( temp ) fprintf( stderr, "ERROR: Unable to copy texture to renderer: %s\n", SDL_GetError() );
+                /* Calculate scaling to draw selection box in current SDL window. */
+                SDL_Rect selection_dest_box = {0,0,0,0};
+                sdl_selection_rect( &selection_dest_box, file_list, sdl_pointers );
+                /* Load selection box to renderer. */
+                temp = SDL_SetRenderDrawColor( sdl_pointers->renderer, file_list->sel_r, file_list->sel_g, 
+                                file_list->sel_b, file_list->sel_a );
+                if( temp ) fprintf( stderr, "ERROR: Unable to set renderer color: %s\n", SDL_GetError() );
+                temp = SDL_RenderDrawRect( sdl_pointers->renderer, &selection_dest_box );
+                if( temp ) fprintf( stderr, "ERROR: Unable to draw rectangle on renderer: %s\n", SDL_GetError() );
+                /* Update titlebar and render SDL renderer to SDL window. */
+                update_titlebar( file_list, sdl_pointers );
+                SDL_RenderPresent( sdl_pointers->renderer );
         }
         
         if( SGK_DEBUG ) printf( "DEBUG: Leaving function draw().\n" );
@@ -594,6 +685,8 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                         //       Test the performance while dragging the window around the desktop with a large image loaded.
                         //       Note: My computer might be a bad example since my WM only draws window outline while moving. Test with a WM that shows window contents while dragging.
                         //       https://wiki.libsdl.org/SDL_WindowEvent
+                        //       Also, when maximizing window, SDL sees multiple (~3) events. Why, and what are they?
+                        file_list = draw( none, file_list, sdl_pointers );
                         break;
                 case SDL_KEYDOWN:
                         switch( event->key.keysym.sym ) {
@@ -623,6 +716,8 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                 case KEY_SELECTIONBOX_RESET:
                                         break;
                                 case KEY_TOGGLE_OUTLINE_COLOR:
+                                        toggle_selection_color( file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 default:
                                         // TODO: Should I display help if unrecognized key is pressed?
