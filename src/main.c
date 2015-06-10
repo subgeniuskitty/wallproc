@@ -99,7 +99,7 @@ void sdl_texture_rect( SDL_Rect * rect, FILE_LIST * file_list, SDL_POINTERS * sd
 void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void toggle_selection_color( FILE_LIST * file_list );
 void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
-void change_sel_size( DIRECTION dir, FILE_LIST * file_list );
+void sel_resize( DIRECTION dir, FILE_LIST * file_list );
 
 /*
  * =====================================================================================================================
@@ -696,7 +696,7 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
 }
 
 /* Changes selection box size and keeps it within upper and lower bounds. */
-void change_sel_size( DIRECTION dir, FILE_LIST * file_list ) {
+void sel_resize( DIRECTION dir, FILE_LIST * file_list ) {
         if( SGK_DEBUG ) printf( "DEBUG: Decreasing selection box size.\n" );
 
         int temp_w = 0;
@@ -785,11 +785,11 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                         file_list = draw( left, file_list, sdl_pointers );
                                         break;
                                 case KEY_SIZEUP:
-                                        change_sel_size( up, file_list );
+                                        sel_resize( up, file_list );
                                         file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_SIZEDOWN:
-                                        change_sel_size( down, file_list );
+                                        sel_resize( down, file_list );
                                         file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_LEFT:
