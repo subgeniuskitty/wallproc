@@ -42,5 +42,12 @@
  */
 #define SELECT_SIZE_MULT 0.05
 
+/* 
+ * Multiplicative step size for selection box movement.
+ * Example: A value of 0.05 means the selection box will change position
+ * by 5% of the total image dimension.
+ */
+#define SELECT_POS_MULT 0.05
+
 /* Set to 1 to enable debugging info on console. */
 #define SGK_DEBUG 1 

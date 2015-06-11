@@ -100,6 +100,8 @@ void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTER
 void toggle_selection_color( FILE_LIST * file_list );
 void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void sel_resize( DIRECTION dir, FILE_LIST * file_list );
+void sel_move( DIRECTION dir, FILE_LIST * file_list );
+void sel_sanitize( SDL_Rect * params, FILE_LIST * file_list );
 
 /*
  * =====================================================================================================================
@@ -695,21 +697,53 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
         return file_list;
 }
 
+void sel_sanitize( SDL_Rect * params, FILE_LIST * file_list ) {
+        /* If either dimension goes below 1/SELECT_SIZE_MULT, then inc_sel_size() will be unable to function. */
+        /* Although there exist four cases, we only need to handle two cases due to the aspect constraint. */
+        while( params->w < 1/SELECT_SIZE_MULT || params->h < 1/SELECT_SIZE_MULT ) {
+                if( file_list->aspect > 1 ) {
+                        params->h = 1/SELECT_SIZE_MULT + 1;
+                        params->w = params->h * file_list->aspect;
+                } else {
+                        params->w = 1/SELECT_SIZE_MULT + 1;
+                        params->h = params->w / file_list->aspect;
+                }
+        }
+
+        /* Constrain selection box size with image dimensions. */
+        while( params->w > file_list->img_w || params->h > file_list->img_h ) {
+                if( params->w > file_list->img_w ) {
+                        params->h = params->h * ( (double) file_list->img_w / (double) params->w );
+                        params->w = file_list->img_w;
+                }
+                if( params->h > file_list->img_h ) {
+                        params->w = params->w * ( (double) file_list->img_h / (double) params->h );
+                        params->h = file_list->img_h;
+                }
+        }
+
+        /* Constrain selection box location such that it remains entirely within the image boundaries. */
+        if( params->y < 0 ) params->y = 0;
+        if( (params->y+params->h) > file_list->img_h ) params->y = file_list->img_h - params->h;
+        if( (params->x+params->w) > file_list->img_w ) params->x = file_list->img_w - params->w;
+        if( params->x < 0 ) params->x = 0;
+
+}
+
 /* Changes selection box size and keeps it within upper and lower bounds. */
 void sel_resize( DIRECTION dir, FILE_LIST * file_list ) {
-        if( SGK_DEBUG ) printf( "DEBUG: Decreasing selection box size.\n" );
+        if( SGK_DEBUG ) printf( "DEBUG: Resizing selection box.\n" );
 
-        int temp_w = 0;
-        int temp_h = 0;
+        SDL_Rect temp = {0,0,0,0};
 
         switch( dir ) {
                 case up:
-                        temp_w = file_list->sel_w * (1 + SELECT_SIZE_MULT);
-                        temp_h = temp_w / file_list->aspect;
+                        temp.w = file_list->sel_w * (1 + SELECT_SIZE_MULT);
+                        temp.h = temp.w / file_list->aspect;
                         break;
                 case down:
-                        temp_w = file_list->sel_w * (1 - SELECT_SIZE_MULT);
-                        temp_h = temp_w / file_list->aspect;
+                        temp.w = file_list->sel_w * (1 - SELECT_SIZE_MULT);
+                        temp.h = temp.w / file_list->aspect;
                         break;
                 case left:
                 case right:
@@ -717,43 +751,73 @@ void sel_resize( DIRECTION dir, FILE_LIST * file_list ) {
                         break;
         }
 
-        /* If either dimension goes below 1/SELECT_SIZE_MULT, then inc_sel_size() will be unable to function. */
-        /* Although there exist four cases, we only need to handle two cases due to the aspect constraint. */
-        while( temp_w < 1/SELECT_SIZE_MULT || temp_h < 1/SELECT_SIZE_MULT ) {
-                if( file_list->aspect > 1 ) {
-                        temp_h = 1/SELECT_SIZE_MULT + 1;
-                        temp_w = temp_h * file_list->aspect;
-                } else {
-                        temp_w = 1/SELECT_SIZE_MULT + 1;
-                        temp_h = temp_w / file_list->aspect;
-                }
-        }
+        /* Verify that new selection box size doesn't exceed bounds. */
+        sel_sanitize( &temp, file_list );
 
-        /* Constrain selection box size with image dimensions. */
-        while( temp_w > file_list->img_w || temp_h > file_list->img_h ) {
-                if( temp_w > file_list->img_w ) {
-                        temp_h = temp_h * ( (double) file_list->img_w / (double) temp_w );
-                        temp_w = file_list->img_w;
-                }
-                if( temp_h > file_list->img_h ) {
-                        temp_w = temp_w * ( (double) file_list->img_h / (double) temp_h );
-                        temp_h = file_list->img_h;
-                }
-        }
+        /* Center selection box exactly where it used to be centered. */
+        temp.x = file_list->sel_x + ( file_list->sel_w / 2 ) - ( temp.w / 2 );
+        temp.y = file_list->sel_y + ( file_list->sel_h / 2 ) - ( temp.h / 2 );
+
+        /* Verify that new selection box position doesn't exceed bounds. */
+        sel_sanitize( &temp, file_list );
 
         if( SGK_DEBUG ) {
                 printf( "DEBUG:  -- Image dimensions: %dx%d\n", file_list->img_w, file_list->img_h );
-                printf( "DEBUG:  -- Old selection dimensions: %dx%d\n", file_list->sel_w, file_list->sel_h );
-                printf( "DEBUG:  -- New selection dimensions: %dx%d\n", temp_w, temp_h );
+                printf( "DEBUG:  -- Old selection: (%d+%d)x(%d+%d)\n", file_list->sel_w, 
+                                file_list->sel_x, file_list->sel_h, file_list->sel_y );
+                printf( "DEBUG:  -- New selection: (%d+%d)x(%d+%d)\n", temp.w, temp.x, temp.h, temp.y );
         }
 
-        /* Center selection box exactly where it used to be centered. */
-        file_list->sel_x = file_list->sel_x + ( file_list->sel_w / 2 ) - ( temp_w / 2 );
-        file_list->sel_y = file_list->sel_y + ( file_list->sel_h / 2 ) - ( temp_h / 2 );
-
         /* Store temporary values as new selection box dimensions. */
-        file_list->sel_w = temp_w;
-        file_list->sel_h = temp_h;
+        file_list->sel_w = temp.w;
+        file_list->sel_h = temp.h;
+        file_list->sel_x = temp.x;
+        file_list->sel_y = temp.y;
+}
+
+/* Moves selection box within programmed bounds. */
+void sel_move( DIRECTION dir, FILE_LIST * file_list ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Moving selection box.\n" );
+
+        SDL_Rect temp = {0,0,0,0};
+        temp.h = file_list->sel_h;
+        temp.w = file_list->sel_w;
+
+        /* Populate temporary values with requested offset for selection box. */
+        switch( dir ) {
+                case up:
+                        temp.x = file_list->sel_x;
+                        temp.y = file_list->sel_y - ( SELECT_POS_MULT * file_list->img_h );
+                        break;
+                case down:
+                        temp.x = file_list->sel_x;
+                        temp.y = file_list->sel_y + ( SELECT_POS_MULT * file_list->img_h );
+                        break;
+                case left:
+                        temp.x = file_list->sel_x - ( SELECT_POS_MULT * file_list->img_w );
+                        temp.y = file_list->sel_y;
+                        break;
+                case right:
+                        temp.x = file_list->sel_x + ( SELECT_POS_MULT * file_list->img_w );
+                        temp.y = file_list->sel_y;
+                        break;
+                case none:
+                        break;
+        }
+
+        /* Verify that new selection box position doesn't exceed bounds. */
+        sel_sanitize( &temp, file_list );
+
+        if( SGK_DEBUG ) {
+                printf( "DEBUG:  -- Image dimensions: %dx%d\n", file_list->img_w, file_list->img_h );
+                printf( "DEBUG:  -- Old selection: (%d+%d)x(%d+%d)\n", file_list->sel_w, 
+                                file_list->sel_x, file_list->sel_h, file_list->sel_y );
+                printf( "DEBUG:  -- New selection: (%d+%d)x(%d+%d)\n", temp.w, temp.x, temp.h, temp.y );
+        }
+
+        /* Store temporary values as new selection box offsets. */
+        file_list->sel_x = temp.x;
+        file_list->sel_y = temp.y;
 }
 
 /* Processes a single SDL event, initiating whatever action the event requires. */
@@ -793,12 +857,20 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                         file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_LEFT:
+                                        sel_move( left, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_RIGHT:
+                                        sel_move( right, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_UP:
+                                        sel_move( up, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_DOWN:
+                                        sel_move( down, file_list );
+                                        file_list = draw( none, file_list, sdl_pointers );
                                         break;
                                 case KEY_SELECTIONBOX_RESET:
                                         reset_sel_box( file_list );
