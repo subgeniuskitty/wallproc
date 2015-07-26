@@ -15,6 +15,7 @@
 #define KEY_PREV SDLK_COMMA                     // Using comma since it's the same key as '<', a back arrow.
 
 #define KEY_SAVE SDLK_SPACE                     // Crop current file to selection box and save in destination folder.
+#define KEY_UNDO SDLK_u                         // Delete cropped version of currently displayed image (if it exists).
 
 #define KEY_SIZEUP SDLK_KP_PLUS                 // Increase selection box size
 #define KEY_SIZEDOWN SDLK_KP_MINUS              // Decrease selection box size

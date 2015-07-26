@@ -104,6 +104,7 @@ void sel_resize( DIRECTION dir, FILE_LIST * file_list );
 void sel_move( DIRECTION dir, FILE_LIST * file_list );
 void sel_sanitize( SDL_Rect * params, FILE_LIST * file_list );
 void crop_save( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args );
+void del_cropped_img( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args );
 
 /*
  * =====================================================================================================================
@@ -862,6 +863,35 @@ void crop_save( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args ) {
         DestroyMagickWand( magick_wand );
 }
 
+/* In destination folder, deletes image specified in file_list. */
+void del_cropped_img( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args ) {
+        /* Build the destination path. */
+        int len = strlen( cmd_line_args->dst ) + strlen( file_list->file ) + 1 + 1; /* +2 for '/' separator and '\0' */
+        char * path = malloc( len );
+        if( path == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for file path string.\n" );
+                return;
+        } else {
+                snprintf( path, len, "%s/%s", cmd_line_args->dst, file_list->file );
+        }
+
+        /* Delete the file */
+        int temp = remove( path );
+
+        /* Debug info */
+        if( SGK_DEBUG ) {
+                printf( "DEBUG: Deleting image %s", path );
+                if( temp == 0 ) {
+                        printf( " -- success\n" );
+                } else {
+                        printf( " -- failure\n" );
+                }
+        }
+
+        /* Clean up */
+        free( path );
+}
+
 /* Processes a single SDL event, initiating whatever action the event requires. */
 /* Returns NULL if program should terminate, otherwise returns FILE_LIST* to most current file_list. */
 FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, 
@@ -891,6 +921,9 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list,
                                         break;
                                 case KEY_SAVE:
                                         crop_save( file_list, cmd_line_args );
+                                        break;
+                                case KEY_UNDO:
+                                        del_cropped_img( file_list, cmd_line_args );
                                         break;
                                 case KEY_NEXT:
                                         file_list = draw( right, file_list, sdl_pointers );
