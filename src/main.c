@@ -23,7 +23,8 @@
 typedef struct FILELIST {
         struct FILELIST * next; /* Pointer to next struct */
         struct FILELIST * prev; /* Pointer to previous struct */
-        char * path;            /* Absolute path to file */
+        char * path;            /* Full filename/path (ex: /path/to/file.png) */
+        char * file;            /* Just the filename */
         int img_h;              /* Image vertical dimensions in pixels */
         int img_w;              /* Image horizontal dimensions in pixels */
         int sel_h;              /* Selection box vertical dimensions in pixels */
@@ -47,7 +48,6 @@ typedef struct CMDLINEARGS {
         char * src;
         char * dst;
         double aspect;
-        char * archive;
 } CMD_LINE_ARGS;
 
 /* Since these pointers tend to go together, pack them in a struct to simplify function declarations. */
@@ -79,7 +79,7 @@ typedef enum DIRECTION {
  * =====================================================================================================================
  */
 
-int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc );
+int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv );
 void print_usage( char * argv[] );
 char * sanitize_path( char * path );
 FILE_LIST * build_file_list( char * source, double aspect );
@@ -89,7 +89,8 @@ int imagick_init( void );
 int sdl_clear( SDL_POINTERS * sdl_pointers );
 void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] );
 void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
-FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
+FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list,
+                SDL_POINTERS * sdl_pointers, CMD_LINE_ARGS * cmd_line_args );
 void sdl_test( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void imagick_test( FILE_LIST * file_list );
 void del_file_from_list( FILE_LIST * file_list );
@@ -102,6 +103,7 @@ void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers );
 void sel_resize( DIRECTION dir, FILE_LIST * file_list );
 void sel_move( DIRECTION dir, FILE_LIST * file_list );
 void sel_sanitize( SDL_Rect * params, FILE_LIST * file_list );
+void crop_save( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args );
 
 /*
  * =====================================================================================================================
@@ -113,6 +115,7 @@ void clear_filelist_struct( FILE_LIST * ent ) {
         ent->next = NULL;
         ent->prev = NULL;
         ent->path = NULL;
+        ent->file = NULL;
         ent->img_h = 0;
         ent->img_w = 0;
         ent->sel_h = 0;
@@ -158,7 +161,8 @@ FILE_LIST * build_file_list( char * source, double aspect ) {
                                                 + 1                     /* +1 for '/' between path and filename */
                                                 + 1;                    /* +1 for terminating null character */
                                         temp->path = malloc( len );
-                                        if( temp->path == NULL ) {
+                                        temp->file = malloc( strlen(ent->d_name) + 1 );
+                                        if( temp->path == NULL || temp->file == NULL) {
                                                 /*
                                                  * Print the error, but also free temp and set temp = NULL.
                                                  * This ensures we don't add a bogus entry to the list.
@@ -169,6 +173,8 @@ FILE_LIST * build_file_list( char * source, double aspect ) {
                                         } else {
                                                 /* Copy the string, including the relative path from PWD. */
                                                 snprintf( temp->path, len, "%s/%s", source, ent->d_name );
+                                                /* Copy string containing only the filename. */
+                                                snprintf( temp->file, strlen(ent->d_name)+1, ent->d_name );
                                                 /* Add the desired aspect ratio field. */
                                                 temp->aspect = aspect;
                                         }
@@ -199,17 +205,14 @@ FILE_LIST * build_file_list( char * source, double aspect ) {
 }
 
 void print_usage( char * argv[] ) {
-        /* TODO: This version statement is buried in the source code. Make it more visible, perhaps in a #define. */
-        printf( "wallproc 0.1.0 (www.subgeniuskitty.com)\n"
-                "Usage: %s <source> <destination> <aspect> (archive)\n"
+        printf( "wallproc %d.%d (www.subgeniuskitty.com)\n"
+                "Usage: %s <source> <destination> <aspect>\n"
                 "  source:      Directory containing images to be processed\n"
                 "  destination: Directory to contain modified images\n"
                 "  aspect:      Desired aspect ratio of cropped images as a float\n"
                 "               Example: 2560x1600 resolution is 16:10 aspect ratio, so aspect would be 1.6\n"
-                "  archive:     (optional) Directory to contain copy of modified images in their unmodified state\n"
-                , argv[0] );
+                , VER_MAJOR, VER_MINOR, argv[0] );
 }
-
 
 /* Removes trailing slash and verifies path exists. If so, copies path and returns pointer. Otherwise, returns NULL. */
 char * sanitize_path( char * path ) {
@@ -240,7 +243,7 @@ char * sanitize_path( char * path ) {
 
 /* Sanitizes arguments passed in via argv[], storing the result in a CMD_LINE_ARGS struct. */
 /* Returns 1 on program-halting error, otherwise 0. */
-int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc ) {
+int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv ) {
         int ret_val = 0;
         
         /* Sanitize the aspect ratio. */
@@ -258,20 +261,11 @@ int process_argv( CMD_LINE_ARGS * cmd_line_args, char ** argv, int argc ) {
         cmd_line_args->dst = sanitize_path( argv[2] );
         if( cmd_line_args->dst == NULL ) ret_val = 1;
 
-        /* If it was specified, sanitize the archive directory. */
-        if( argc == 5 ) {
-                cmd_line_args->archive = sanitize_path( argv[4] );
-                if( cmd_line_args->archive == NULL ) ret_val = 1;
-        }
-
         if( SGK_DEBUG ) {
                 printf( "DEBUG: Processing command line arguments.\n" );
                 printf( "DEBUG:  -- Aspect Ratio = %f\n", cmd_line_args->aspect );
                 printf( "DEBUG:  -- Source = %s\n", cmd_line_args->src );
                 printf( "DEBUG:  -- Destination = %s\n", cmd_line_args->dst );
-                if( argc == 5 ) {
-                        printf( "DEBUG:  -- Archive = %s\n", cmd_line_args->archive );
-                }
         }
 
         return ret_val;
@@ -375,7 +369,7 @@ int imagick_init( void ) {
 /* Initialize everything. No return since this function exits the program on failure. */
 void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] ) {
         /* Check for the right number of command line arguments. */
-        if( argc != 5 && argc != 4 ) {
+        if( argc != 4 ) {
                 fprintf( stderr, "ERROR: Incorrect number of arguments.\n" );
                 print_usage(argv);
                 exit(EXIT_FAILURE);
@@ -387,7 +381,7 @@ void initialize( INIT_POINTERS * init_pointers, int argc, char * argv[] ) {
                 exit(EXIT_FAILURE);
         }
         /* Process the command line arguments. */
-        if( process_argv( init_pointers->cmd_line_args, argv, argc ) ) {
+        if( process_argv( init_pointers->cmd_line_args, argv ) ) {
                 fprintf( stderr, "ERROR: Unable to process command line arguments.\n" );
                 exit(EXIT_FAILURE);
         }
@@ -432,7 +426,6 @@ void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTE
         /* Free memory related to command line arguments. */
         free( cmd_line_args->src );
         free( cmd_line_args->dst );
-        free( cmd_line_args->archive );
         free( cmd_line_args );
 
         /* Free memory related to list of files. */
@@ -440,6 +433,7 @@ void terminate( CMD_LINE_ARGS * cmd_line_args, FILE_LIST * file_list, SDL_POINTE
         file_list->next = NULL;
         while( current->next != NULL ) {
                 free( current->path );
+                free( current->file );
                 current = current->next;
                 free( current->prev );
         }
@@ -468,6 +462,7 @@ void del_file_from_list( FILE_LIST * file_list ) {
         file_list->next->prev = file_list->prev;
         /* Since we have isolated this file_list element, we can now delete it. */
         free(file_list->path);
+        free(file_list->file);
         free(file_list);
 }
 
@@ -480,6 +475,8 @@ void sdl_test( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
                 if( SGK_DEBUG ) printf( " -- already tested\n" );
                 return;
         }
+        SDL_DestroyTexture( sdl_pointers->texture );
+        sdl_pointers->texture = NULL;
         sdl_pointers->texture = IMG_LoadTexture( sdl_pointers->renderer, file_list->path );
         if( sdl_pointers->texture == NULL ) {
                 if( SGK_DEBUG ) printf( " -- failure\n" );
@@ -487,6 +484,7 @@ void sdl_test( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
         } else {
                 if( SGK_DEBUG ) printf( " -- success\n" );
                 file_list->valid_sdl = 1;
+                SDL_DestroyTexture( sdl_pointers->texture );
         }
 }
 
@@ -511,6 +509,7 @@ void imagick_test( FILE_LIST * file_list ) {
                 file_list->img_w = MagickGetImageWidth( magick_wand );
                 reset_sel_box( file_list );
                 file_list->valid_imagick = 1;
+                magick_wand = DestroyMagickWand( magick_wand );
         }
 }
 
@@ -611,15 +610,19 @@ void sdl_selection_rect( SDL_Rect * sel_rect, FILE_LIST * file_list, SDL_POINTER
 
 /* Updates titlebar of SDL window for currently displayed image. */
 void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+        /* First, calculate the selection size in megapixels. */
+        double sel_size = (file_list->sel_w * file_list->sel_h) / 1000000.0;
+
+        /* Now build the titlebar string and display it. */
         char * title = NULL;
-        int length = snprintf( title, 0, "wallproc -- Selection: %dx%d -- File: %s", 
-                        file_list->sel_w, file_list->sel_h, file_list->path );
+        int length = snprintf( title, 0, "wallproc -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s", 
+                        sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
         title = malloc( length+1 );
         if( title == NULL ) {
                 SDL_SetWindowTitle( sdl_pointers->window, "wallproc" );
         } else {
-                snprintf( title, length+1, "wallproc -- Selection: %dx%d -- File: %s",
-                                file_list->sel_w, file_list->sel_h, file_list->path );
+                snprintf( title, length+1, "wallproc -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s",
+                                sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
                 SDL_SetWindowTitle( sdl_pointers->window, title );
                 free(title);
         }
@@ -660,6 +663,7 @@ FILE_LIST * draw( DIRECTION dir, FILE_LIST * file_list, SDL_POINTERS * sdl_point
         SDL_GetWindowSize( sdl_pointers->window, &window_w, &window_h );
         temp = SDL_RenderSetLogicalSize( sdl_pointers->renderer, window_w, window_h );
         if( temp ) fprintf( stderr, "ERROR: Unable to set renderer size: %s\n", SDL_GetError() );
+        SDL_DestroyTexture( sdl_pointers->texture );
         sdl_pointers->texture = IMG_LoadTexture( sdl_pointers->renderer, file_list->path );
         if( sdl_pointers->texture == NULL ) {
                 /* 
@@ -820,20 +824,63 @@ void sel_move( DIRECTION dir, FILE_LIST * file_list ) {
         file_list->sel_y = temp.y;
 }
 
+/* Crops image from file_list according to selection box in file_list. */
+/* After cropping, saves image to destination from cmd_line_args. */
+void crop_save( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args ) {
+        if( SGK_DEBUG ) printf( "DEBUG: Cropping and saving image.\n" );
+
+        /* Open the file */
+        MagickBooleanType magick_status;
+        MagickWand * magick_wand = NewMagickWand();
+        magick_status = MagickReadImage( magick_wand, file_list->path );
+        if( magick_status == MagickFalse ) {
+                fprintf( stderr, "ERROR:  -- Failed to open file: %s\n", file_list->path );
+                return;
+        }
+
+        /* Build the destination path */
+        int len = strlen( cmd_line_args->dst ) + strlen( file_list->file ) + 1 + 1; /* +2 for '/' separator and '\0' */
+        char * dest_path = malloc( len );
+        if( dest_path == NULL ) {
+                fprintf( stderr, "ERROR: Unable to malloc for destination string.\n" );
+                return;
+        } else {
+                snprintf( dest_path, len, "%s/%s", cmd_line_args->dst, file_list->file );
+        }
+
+        /* Crop the image */
+        magick_status = MagickCropImage( magick_wand, file_list->sel_w, file_list->sel_h, 
+                                         file_list->sel_x, file_list->sel_y );
+        if( magick_status == MagickFalse ) fprintf( stderr, "WARN: Problem cropping image.\n" );
+        magick_status = MagickSetImagePage( magick_wand, file_list->sel_w, file_list->sel_h, 0, 0 );
+        if( magick_status == MagickFalse ) fprintf( stderr, "WARN: Problem setting image page geometry.\n" );
+        magick_status = MagickWriteImage( magick_wand, dest_path );
+        if( magick_status == MagickFalse ) fprintf( stderr, "WARN: Problem saving cropped image.\n" );
+
+        /* Clean up */
+        free( dest_path );
+        DestroyMagickWand( magick_wand );
+}
+
 /* Processes a single SDL event, initiating whatever action the event requires. */
 /* Returns NULL if program should terminate, otherwise returns FILE_LIST* to most current file_list. */
-FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
+FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, 
+                SDL_POINTERS * sdl_pointers, CMD_LINE_ARGS * cmd_line_args ) {
+
         switch( event->type ) {
                 case SDL_QUIT:
                         file_list = NULL;
                         break;
                 case SDL_WINDOWEVENT:
-                        // TODO: Should I specify events to handle, or just leave this as a catch-all?
-                        //       Test the performance while dragging the window around the desktop with a large image loaded.
-                        //       Note: My computer might be a bad example since my WM only draws window outline while moving. Test with a WM that shows window contents while dragging.
-                        //       https://wiki.libsdl.org/SDL_WindowEvent
-                        //       Also, when maximizing window, SDL sees multiple (~3) events. Why, and what are they?
-                        file_list = draw( none, file_list, sdl_pointers );
+                        if( event->window.event == SDL_WINDOWEVENT_SHOWN
+                                || event->window.event == SDL_WINDOWEVENT_EXPOSED
+                                || event->window.event == SDL_WINDOWEVENT_MOVED
+                                || event->window.event == SDL_WINDOWEVENT_RESIZED
+                                || event->window.event == SDL_WINDOWEVENT_MAXIMIZED
+                                || event->window.event == SDL_WINDOWEVENT_RESTORED
+                                ) {
+                                file_list = draw( none, file_list, sdl_pointers );
+                        }
                         break;
                 case SDL_KEYDOWN:
                         switch( event->key.keysym.sym ) {
@@ -841,6 +888,9 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                                         file_list = NULL;
                                         break;
                                 case KEY_HELP:
+                                        break;
+                                case KEY_SAVE:
+                                        crop_save( file_list, cmd_line_args );
                                         break;
                                 case KEY_NEXT:
                                         file_list = draw( right, file_list, sdl_pointers );
@@ -887,7 +937,7 @@ FILE_LIST * process_sdl_event( SDL_Event * event, FILE_LIST * file_list, SDL_POI
                         }
                         break;
                 default:
-                        // TODO: Ignore all other actions?
+                        /* Ignore all other SDL events. */
                         break;
         }
 
@@ -921,7 +971,7 @@ int main( int argc, char * argv[] ) {
         SDL_Event event;
         while( quit == 0 ) {
                 if( SDL_WaitEvent( &event ) ) {
-                        temp = process_sdl_event( &event, file_list, sdl_pointers );
+                        temp = process_sdl_event( &event, file_list, sdl_pointers, cmd_line_args );
                         if( temp == NULL ) {
                                 quit = 1;
                         } else {

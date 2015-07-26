@@ -14,6 +14,8 @@
 #define KEY_NEXT SDLK_PERIOD                    // Using period since it's the same key as '>', a forward arrow.
 #define KEY_PREV SDLK_COMMA                     // Using comma since it's the same key as '<', a back arrow.
 
+#define KEY_SAVE SDLK_SPACE                     // Crop current file to selection box and save in destination folder.
+
 #define KEY_SIZEUP SDLK_KP_PLUS                 // Increase selection box size
 #define KEY_SIZEDOWN SDLK_KP_MINUS              // Decrease selection box size
 
@@ -48,6 +50,18 @@
  * by 5% of the total image dimension.
  */
 #define SELECT_POS_MULT 0.05
+
+/*
+ * =====================================================================================================================
+ * dev options
+ * =====================================================================================================================
+ */
+
+/* Major version number */
+#define VER_MAJOR 1
+
+/* Minor version number */
+#define VER_MINOR 0
 
 /* Set to 1 to enable debugging info on console. */
 #define SGK_DEBUG 1 
