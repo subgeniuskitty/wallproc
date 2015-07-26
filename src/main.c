@@ -877,6 +877,7 @@ void del_cropped_img( FILE_LIST * file_list, CMD_LINE_ARGS * cmd_line_args ) {
 
         /* Delete the file */
         int temp = remove( path );
+        if( temp != 0 ) fprintf( stderr, "WARN: Unable to delete image: %s\n", path );
 
         /* Debug info */
         if( SGK_DEBUG ) {
