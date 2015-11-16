@@ -7,7 +7,7 @@
  */
 
 /* 
- * To change keybindings, change the corresponding #define to the desired SDL keycode.
+ * To modify keybindings, change the corresponding #define to the desired SDL keycode.
  * SDL keycode reference located at: https://wiki.libsdl.org/SDL_Keycode
  */
 
@@ -27,10 +27,10 @@
 #define KEY_RIGHT SDLK_KP_6                     //   Right
 
 #define KEY_SELECTIONBOX_RESET SDLK_KP_0        // Reset size and location of selection box to defaults
+#define KEY_TOGGLE_OUTLINE_COLOR SDLK_KP_5      // Toggle the selection box color between light and dark.
 
 #define KEY_QUIT SDLK_q                         // Exit this application
 #define KEY_HELP SDLK_h                         // Pops up a dialog box with key commands after the GUI has launched. 
-#define KEY_TOGGLE_OUTLINE_COLOR SDLK_KP_5      // Toggles the selection box color between light and dark.
 
 /*
  * =====================================================================================================================
@@ -65,4 +65,4 @@
 #define VER_MINOR 0
 
 /* Set to 1 to enable debugging info on console. */
-#define SGK_DEBUG 1 
+#define SGK_DEBUG 0
