@@ -2,5 +2,6 @@
 *.swp
 
 # Compiled binary
-src/wallproc
+src/wp_crop
+src/wp_minsize
 
