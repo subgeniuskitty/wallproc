@@ -25,11 +25,13 @@ void clear_filelist_struct( FILE_LIST * ent ) {
         ent->aspect = 0.0;
         ent->valid_sdl = 0;
         ent->valid_imagick = 0;
+        ent->id = 0;
 }
 
 FILE_LIST * build_file_list( char * source, double aspect ) {
         DIR * dir = NULL;
         struct dirent * ent = NULL;
+        int count = 0;
 
         if( SGK_DEBUG ) printf( "DEBUG: Building file list -- Using directory: %s\n", source );
 
@@ -74,6 +76,8 @@ FILE_LIST * build_file_list( char * source, double aspect ) {
                                                 snprintf( temp->file, strlen(ent->d_name)+1, ent->d_name );
                                                 /* Add the desired aspect ratio field. */
                                                 temp->aspect = aspect;
+                                                /* Add the image count field */
+                                                temp->id = count;
                                         }
                                         if( temp != NULL ) { /* We have a valid entry to add. */
                                                 if( first == NULL ) {
@@ -86,6 +90,7 @@ FILE_LIST * build_file_list( char * source, double aspect ) {
                                                         temp->prev = last;
                                                         last = temp;
                                                 }
+                                                count += 1;
                                         }
                                 }
                         }

@@ -23,6 +23,7 @@ typedef struct FILELIST {
         double aspect;          /* Desired aspect ratio */
         int valid_sdl;          /* Set to 1 when image has been verified by SDL */
         int valid_imagick;      /* Set to 1 when image has been verified by ImageMagick */
+        int id;                 /* Image ID number. Unique and assigned sequentially */
 } FILE_LIST;
 
 typedef struct CMDLINEARGS {

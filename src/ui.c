@@ -15,14 +15,14 @@ void update_titlebar( FILE_LIST * file_list, SDL_POINTERS * sdl_pointers ) {
 
         /* Now build the titlebar string and display it. */
         char * title = NULL;
-        int length = snprintf( title, 0, "wallproc -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s", 
-                        sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
+        int length = snprintf( title, 0, "wallproc -- Image: %d -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s", 
+                        file_list->id, sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
         title = malloc( length+1 );
         if( title == NULL ) {
                 SDL_SetWindowTitle( sdl_pointers->window, "wallproc" );
         } else {
-                snprintf( title, length+1, "wallproc -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s",
-                                sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
+                snprintf( title, length+1, "wallproc -- Image %d -- Size: %.3f Mpx -- Selection: %dx%d -- File: %s",
+                                file_list->id, sel_size, file_list->sel_w, file_list->sel_h, file_list->path );
                 SDL_SetWindowTitle( sdl_pointers->window, title );
                 free(title);
         }
